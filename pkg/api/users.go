@@ -36,6 +36,13 @@ func (ctrl *UsersController) Register(router *gin.RouterGroup) {
 
 	userGroup.POST(fmt.Sprintf("/follow/:%s", targetIDParamNAme), ctrl.followHandler)
 	userGroup.POST(fmt.Sprintf("/unfollow/:%s", targetIDParamNAme), ctrl.unfollowHandler)
+
+	// TODO: POST users/:id/tweet and save it to head of user collection. Use min stack collection (compared value is time elapsed)
+	// to make post tweet O(1) and home timeline O(N) where N is the combined number of tweets to display
+	// TODO: GET users/:id/timeline return tweet min stack by order
+	// TODO: GET users/:id/home. Take the tweet stack of each follower and implement algorithm to merge K min stacks.
+	// TODO: GET /users/popular. Go over the followers map and find the one with the biggest size. Should be able to
+	// use a count map map[id]int to make it more efficient
 }
 
 func (ctrl *UsersController) getUserByIdHandler(ctx *gin.Context) {
