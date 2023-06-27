@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"github.com/google/uuid"
+	"time"
 )
 
 type User struct {
@@ -22,6 +23,10 @@ func ParseUserID(id string) (UserID, error) {
 }
 
 type UserEntity Entity[*User, UserID]
+
+func (u *UserEntity) UpdateTime() {
+	u.UpdatedAt = time.Now()
+}
 
 func (u *UserEntity) MarshalJSON() ([]byte, error) {
 	type Alias UserEntity

@@ -7,4 +7,6 @@ type UserDAO interface {
 	Create(*model.User) (*model.UserEntity, error)
 	Update(id model.UserID, user *model.User) (*model.UserEntity, error)
 	Delete(id model.UserID) error
+	Follow(userID model.UserID, targetID model.UserID) (*model.Following, error)
+	Unfollow(userID model.UserID, targetID model.UserID) (*model.Following, error)
 }

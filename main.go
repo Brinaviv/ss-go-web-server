@@ -12,7 +12,7 @@ import (
 
 func main() {
 	ConfigureLogger()
-	serverConfig := &api.ServerConfig{Host: "localhost", Port: "8080", Controllers: initControllers()}
+	serverConfig := &api.ServerConfig{Host: "localhost", Port: "8080", Controllers: initControllers()} // TODO: read config from file / env
 
 	panicIfError(api.StartWebServer(serverConfig))
 

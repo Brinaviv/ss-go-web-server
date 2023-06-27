@@ -14,20 +14,32 @@ type UsersController struct {
 }
 
 const (
-	relativePath = "/users"
-	idParamName  = "id"
+	relativePath      = "/users"
+	userIDParamName   = "id"
+	targetIDParamNAme = "target"
+)
+
+var (
+	ErrUnfollowSelf = errors.New("a user cannot unfollow themselves")
+	ErrFollowSelf   = errors.New("a user cannot follow themselves")
 )
 
 func (ctrl *UsersController) Register(router *gin.RouterGroup) {
 	group := router.Group(relativePath)
-	group.GET(fmt.Sprintf("/:%s", idParamName), ctrl.getUserByIdHandler)
 	group.POST("", ctrl.createUserHandler)
-	group.PATCH(fmt.Sprintf("/:%s", idParamName), ctrl.updateUserHandler)
-	group.DELETE(fmt.Sprintf("/:%s", idParamName), ctrl.deleteUserHandler)
+
+	// specific user methods
+	userGroup := group.Group(fmt.Sprintf("/:%s", userIDParamName))
+	userGroup.GET("", ctrl.getUserByIdHandler)
+	userGroup.PATCH("", ctrl.updateUserHandler)
+	userGroup.DELETE("", ctrl.deleteUserHandler)
+
+	userGroup.POST(fmt.Sprintf("/follow/:%s", targetIDParamNAme), ctrl.followHandler)
+	userGroup.POST(fmt.Sprintf("/unfollow/:%s", targetIDParamNAme), ctrl.unfollowHandler)
 }
 
 func (ctrl *UsersController) getUserByIdHandler(ctx *gin.Context) {
-	id, err := getUserIDParam(ctx)
+	id, err := getIDParam(ctx)
 	if err != nil {
 		ctx.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -35,10 +47,10 @@ func (ctrl *UsersController) getUserByIdHandler(ctx *gin.Context) {
 
 	userEntity, err := ctrl.UserDAO.FetchByID(id)
 	if err != nil {
-		var errNotFound *dal.ErrIDNotFound
-		if errors.As(err, &errNotFound) {
-			ctx.AbortWithError(http.StatusNotFound, errNotFound)
-		} else {
+		switch {
+		case errors.Is(err, dal.ErrUserNotFound):
+			ctx.AbortWithError(http.StatusNotFound, err)
+		default:
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 		}
 		return
@@ -80,7 +92,7 @@ func (ctrl *UsersController) updateUserHandler(ctx *gin.Context) {
 		return
 	}
 
-	id, err := getUserIDParam(ctx)
+	id, err := getIDParam(ctx)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -95,7 +107,7 @@ func (ctrl *UsersController) updateUserHandler(ctx *gin.Context) {
 }
 
 func (ctrl *UsersController) deleteUserHandler(ctx *gin.Context) {
-	id, err := getUserIDParam(ctx)
+	id, err := getIDParam(ctx)
 	if err != nil {
 		ctx.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -103,10 +115,10 @@ func (ctrl *UsersController) deleteUserHandler(ctx *gin.Context) {
 
 	err = ctrl.UserDAO.Delete(id)
 	if err != nil {
-		var errNotFound *dal.ErrIDNotFound
-		if errors.As(err, &errNotFound) {
-			ctx.AbortWithError(http.StatusNotFound, errNotFound)
-		} else {
+		switch {
+		case errors.Is(err, dal.ErrUserNotFound):
+			ctx.AbortWithError(http.StatusNotFound, err)
+		default:
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 		}
 		return
@@ -116,6 +128,78 @@ func (ctrl *UsersController) deleteUserHandler(ctx *gin.Context) {
 	}{Msg: fmt.Sprintf("deleted user with id %s", id.String())})
 }
 
-func getUserIDParam(ctx *gin.Context) (model.UserID, error) {
-	return model.ParseUserID(ctx.Param(idParamName))
+func (ctrl *UsersController) followHandler(ctx *gin.Context) {
+	userID, err := getIDParam(ctx)
+	if err != nil {
+		ctx.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	targetID, err := getTargetIDParam(ctx)
+	if err != nil {
+		ctx.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if userID == targetID {
+		ctx.AbortWithError(http.StatusBadRequest, ctx.AbortWithError(http.StatusBadRequest, fmt.Errorf("%w; id %s", ErrFollowSelf, userID)))
+		return
+	}
+
+	followers, err := ctrl.UserDAO.Follow(userID, targetID)
+	if err != nil {
+		switch {
+		case errors.Is(err, dal.ErrUserNotFound):
+			ctx.AbortWithError(http.StatusNotFound, err)
+		case errors.Is(err, dal.ErrAlreadyFollowing):
+			ctx.AbortWithError(http.StatusBadRequest, err)
+		default:
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+		}
+	}
+
+	ctx.IndentedJSON(http.StatusOK, followers)
+}
+
+func (ctrl *UsersController) unfollowHandler(ctx *gin.Context) {
+	userID, err := getIDParam(ctx)
+	if err != nil {
+		ctx.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	targetID, err := getTargetIDParam(ctx)
+	if err != nil {
+		ctx.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if userID == targetID {
+		ctx.AbortWithError(http.StatusBadRequest, fmt.Errorf("%w; id %s", ErrUnfollowSelf, userID))
+		return
+	}
+
+	followers, err := ctrl.UserDAO.Unfollow(userID, targetID)
+	if err != nil {
+		switch {
+		case errors.Is(err, dal.ErrUserNotFound):
+			ctx.AbortWithError(http.StatusNotFound, err)
+		case errors.Is(err, dal.ErrAlreadyFollowing):
+			ctx.AbortWithError(http.StatusBadRequest, err)
+		default:
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+		}
+	}
+
+	ctx.IndentedJSON(http.StatusOK, followers)
+}
+
+func getIDParam(ctx *gin.Context) (model.UserID, error) {
+	return getUserIDParamByName(ctx, userIDParamName)
+}
+
+func getTargetIDParam(ctx *gin.Context) (model.UserID, error) {
+	return getUserIDParamByName(ctx, targetIDParamNAme)
+}
+
+func getUserIDParamByName(ctx *gin.Context, paramName string) (model.UserID, error) {
+	return model.ParseUserID(ctx.Param(paramName))
 }
